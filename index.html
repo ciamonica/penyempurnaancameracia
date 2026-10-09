@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tugas Praktik: Object & Item Detection with Photobooth</title>
+
+    <!-- TensorFlow.js & COCO-SSD Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+    <!-- Firebase v8 SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        body {
+            background-color: #ffffff;
+            color: #000000;
+            padding: 30px;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            font-size: 13px;
+            font-weight: bold;
+            padding: 6px 12px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+        }
+
+        .status-badge.online {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-badge.offline {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .counter-container {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .counter-card {
+            background-color: #f3f4f6;
+            padding: 12px 18px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: bold;
+            border-left: 4px solid #10b981;
+        }
+
+        .counter-card.item-card-style {
+            border-left-color: #2563eb;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+        }
+
+        .btn-gray {
+            background-color: #6b7280;
+        }
+
+        .btn-gray:hover {
+            background-color: #4b5563;
+        }
+
+        .btn-blue {
+            background-color: #2563eb;
+        }
+
+        .btn-blue:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-purple {
+            background-color: #8b5cf6;
+        }
+
+        .btn-purple:hover {
+            background-color: #7c3aed;
+        }
+
+        .btn-pink {
+            background-color: #ec4899;
+        }
+
+        .btn-pink:hover {
+            background-color: #db2777;
+        }
+
+        .btn-red {
+            background-color: #dc2626;
+        }
+
+        .btn-red:hover {
+            background-color: #b91c1c;
+        }
+
+        .btn-green {
+            background-color: #16a34a;
+        }
+
+        .btn-green:hover {
+            background-color: #15803d;
+        }
+
+        .btn-clear {
+            background-color: #ef4444;
+            font-size: 12px;
+            padding: 6px 10px;
+        }
+
+        .btn-clear:hover {
+            background-color: #b91c1c;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .main-layout {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .video-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 640px;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        video {
+            width: 100%;
+            display: block;
+            border-radius: 12px;
+            transition: filter 0.1s ease;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #beauty-canvas,
+        #photobooth-overlay-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #photobooth-overlay-canvas {
+            z-index: 3;
+        }
+
+        .filter-panel {
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .filter-title {
+            font-size: 13px;
+            font-weight: bold;
+            color: #374151;
+            text-transform: uppercase;
+        }
+
+        .preset-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-filter {
+            padding: 6px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            background-color: #ffffff;
+            color: #374151;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-filter:hover {
+            background-color: #f3f4f6;
+        }
+
+        .btn-filter.active {
+            background-color: #ec4899;
+            color: #ffffff;
+            border-color: #ec4899;
+        }
+
+        .color-picker-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .color-picker-group input[type="color"] {
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .sticker-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-sticker {
+            font-size: 18px;
+            padding: 6px 10px;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-sticker.active {
+            border-color: #ec4899;
+            background-color: #fce7f3;
+        }
+
+        .makeup-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 10px;
+        }
+
+        .checkbox-control {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #374151;
+            background-color: #ffffff;
+            padding: 8px 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .checkbox-control input {
+            cursor: pointer;
+        }
+
+        .slider-group {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .slider-control {
+            flex: 1;
+            min-width: 140px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #4b5563;
+        }
+
+        .slider-control input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .item-list-container {
+            flex: 1;
+            min-width: 250px;
+            max-width: 320px;
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            max-height: 750px;
+            overflow-y: auto;
+        }
+
+        .item-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .item-list-title {
+            font-weight: bold;
+            font-size: 14px;
+            color: #374151;
+            text-transform: uppercase;
+        }
+
+        .item-tag {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .item-tag.person-tag {
+            border-left: 3px solid #10b981;
+        }
+
+        .item-tag.object-tag {
+            border-left: 3px solid #2563eb;
+        }
+
+        .item-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .item-time {
+            font-size: 10px;
+            color: #9ca3af;
+            font-weight: normal;
+            margin-top: 2px;
+        }
+
+        .item-tag .badge-score {
+            background-color: #dbeafe;
+            color: #1e40af;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 720px;
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+        }
+
+        .close-btn {
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        .gallery-slider-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .gallery-slider {
+            display: flex;
+            gap: 16px;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            padding: 10px 0;
+            width: 100%;
+            -webkit-overflow-scrolling: touch;
+            cursor: grab;
+            user-select: none;
+        }
+
+        .gallery-card {
+            flex: 0 0 280px;
+            scroll-snap-align: center;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            background-color: #f9fafb;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .gallery-card img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            display: block;
+            cursor: pointer;
+        }
+
+        .gallery-card-body {
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #4b5563;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #ffffff;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .nav-arrow {
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #d1d5db;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .nav-arrow.left {
+            left: -15px;
+        }
+
+        .nav-arrow.right {
+            right: -15px;
+        }
+
+        #lightbox-modal {
+            display: none;
+            position: fixed;
+            z-index: 1200;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #lightbox-img {
+            max-width: 90%;
+            max-height: 80vh;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            color: #ffffff;
+            font-size: 32px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Tugas Praktik: Object Detection & Photobooth Studio</h1>
+
+    <div id="db-status" class="status-badge offline">FIREBASE OFFLINE</div>
+
+    <div class="counter-container">
+        <div class="counter-card">
+            Orang Terdeteksi: <span id="person-count">0</span>
+        </div>
+        <div class="counter-card item-card-style">
+            Benda/Objek Lain: <span id="object-count">0</span>
+        </div>
+    </div>
+
+    <div class="button-group">
+        <button id="btn-start-cam" class="btn btn-gray">Nyala Kamera</button>
+        <button id="btn-stop-cam" class="btn btn-gray">Mati Kamera</button>
+        <button id="btn-toggle-ai" class="btn btn-red" disabled>Start AI</button>
+        <button id="btn-capture" class="btn btn-blue" disabled>Ambil Foto</button>
+        <button id="btn-gallery" class="btn btn-purple">Galeri Foto (<span id="gallery-count">0</span>)</button>
+    </div>
+
+    <div class="main-layout">
+        <div class="video-column">
+            <div class="video-container">
+                <video id="video" autoplay playsinline muted></video>
+                <canvas id="beauty-canvas"></canvas>
+                <canvas id="photobooth-overlay-canvas"></canvas>
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <!-- PANEL PHOTOBOOTH, BINGKAI & STIKER -->
+            <div class="filter-panel">
+                <div class="filter-title">📸 Desain Frame & Photobooth</div>
+
+                <div class="preset-buttons">
+                    <button class="btn-filter active" onclick="setFrameStyle('none')">Tanpa Frame</button>
+                    <button class="btn-filter" onclick="setFrameStyle('classic')">Bingkai Border</button>
+                    <button class="btn-filter" onclick="setFrameStyle('heart')">Heart Cutout 🤍</button>
+                    <button class="btn-filter" onclick="setFrameStyle('photostrip')">Photostrip 3 Stack 🎞️</button>
+                </div>
+
+                <div class="color-picker-group">
+                    <label>Warna Frame:</label>
+                    <input type="color" id="frame-color-picker" value="#f472b6" onchange="renderPhotoboothFrame()" />
+                </div>
+
+                <div class="filter-title">🎀 Stiker Lucu Overlay</div>
+                <div class="sticker-selector">
+                    <button class="btn-sticker" onclick="toggleSticker('🎀')">🎀 Pita</button>
+                    <button class="btn-sticker" onclick="toggleSticker('🌸')">🌸 Bunga</button>
+                    <button class="btn-sticker" onclick="toggleSticker('🐰')">🐰 Kelinci</button>
+                    <button class="btn-sticker" onclick="toggleSticker('📷')">📷 Kamera</button>
+                    <button class="btn-sticker" onclick="toggleSticker('🍰')">🍰 Kue</button>
+                    <button class="btn-sticker" onclick="toggleSticker('✨')">✨ Bintang</button>
+                </div>
+
+                <div class="filter-title" style="margin-top: 4px;">💄 Fitur Riasan & Virtual Make-up</div>
+
+                <div class="makeup-controls">
+                    <label class="checkbox-control">
+                        <input type="checkbox" id="chk-slim" onchange="renderBeautyMakeup()" />
+                        ✨ Penirus Pipi
+                    </label>
+                    <label class="checkbox-control">
+                        <input type="checkbox" id="chk-smooth" onchange="renderBeautyMakeup()" />
+                        🌸 Kulit Halus
+                    </label>
+                    <label class="checkbox-control">
+                        <input type="checkbox" id="chk-nose" onchange="renderBeautyMakeup()" />
+                        👃 Mancung Hidung
+                    </label>
+                    <label class="checkbox-control">
+                        <input type="checkbox" id="chk-lip" onchange="renderBeautyMakeup()" />
+                        💋 Bibir Tebal Kecil
+                    </label>
+                </div>
+
+                <div class="filter-title" style="margin-top: 4px;">🎨 Filter Tone Kamera</div>
+                <div class="preset-buttons">
+                    <button class="btn-filter active" onclick="setPresetFilter('normal')">Normal</button>
+                    <button class="btn-filter" onclick="setPresetFilter('bw')">Hitam Putih</button>
+                    <button class="btn-filter" onclick="setPresetFilter('warm')">Hangat</button>
+                    <button class="btn-filter" onclick="setPresetFilter('cool')">Dingin</button>
+                    <button class="btn-filter" onclick="setPresetFilter('beauty')">Glow Make-up</button>
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-control">
+                        <label>Pencahayaan (Brightness): <span id="val-brightness">100%</span></label>
+                        <input type="range" id="slider-brightness" min="50" max="180" value="100"
+                            oninput="updateCustomFilter()" />
+                    </div>
+                    <div class="slider-control">
+                        <label>Kontras (Contrast): <span id="val-contrast">100%</span></label>
+                        <input type="range" id="slider-contrast" min="50" max="200" value="100"
+                            oninput="updateCustomFilter()" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="item-list-container">
+            <div class="item-list-header">
+                <div class="item-list-title">📋 Rincian Objek</div>
+                <button id="btn-clear-log" class="btn btn-clear">Hapus Log</button>
+            </div>
+            <div id="detected-items-list">
+                <div style="color: #9ca3af; font-size: 13px;">Belum ada benda terdeteksi.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL GALERI FOTO SLIDER -->
+    <div id="gallery-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🖼️ Galeri Foto Tersimpan</h3>
+                <span id="close-modal" class="close-btn">&times;</span>
+            </div>
+
+            <div class="gallery-slider-container">
+                <button class="nav-arrow left" id="slide-left">&#10094;</button>
+                <div id="gallery-slider" class="gallery-slider">
+                    <div style="color: #9ca3af; font-size: 13px;">Belum ada foto yang disimpan.</div>
+                </div>
+                <button class="nav-arrow right" id="slide-right">&#10095;</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL LIGHTBOX FOTO BESAR -->
+    <div id="lightbox-modal">
+        <span id="lightbox-close" class="lightbox-close">&times;</span>
+        <img id="lightbox-img" src="" alt="Pratinjau Foto" />
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDBUJ-KkuwXVKFBsQKoeWXe34VFJF7wY-k",
+            authDomain: "expense--tracker-mahasiswa.firebaseapp.com",
+            projectId: "expense--tracker-mahasiswa",
+            storageBucket: "expense--tracker-mahasiswa.firebasestorage.app",
+            messagingSenderId: "788005349215",
+            appId: "1:788005349215:web:2d69c48153bebb24be38ea"
+        };
+
+        let db = null;
+        const dbStatusEl = document.getElementById('db-status');
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            dbStatusEl.textContent = "FIREBASE ONLINE";
+            dbStatusEl.className = "status-badge online";
+            console.log("Berhasil terhubung ke Firebase Firestore!");
+        } catch (error) {
+            console.error("Gagal terhubung ke Firebase:", error);
+            dbStatusEl.textContent = "FIREBASE OFFLINE";
+            dbStatusEl.className = "status-badge offline";
+        }
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const beautyCanvas = document.getElementById('beauty-canvas');
+        const bCtx = beautyCanvas.getContext('2d');
+        const pbCanvas = document.getElementById('photobooth-overlay-canvas');
+        const pbCtx = pbCanvas.getContext('2d');
+
+        const btnStartCam = document.getElementById('btn-start-cam');
+        const btnStopCam = document.getElementById('btn-stop-cam');
+        const btnToggleAi = document.getElementById('btn-toggle-ai');
+        const btnCapture = document.getElementById('btn-capture');
+        const btnGallery = document.getElementById('btn-gallery');
+        const btnClearLog = document.getElementById('btn-clear-log');
+        const personCountEl = document.getElementById('person-count');
+        const objectCountEl = document.getElementById('object-count');
+        const detectedItemsListEl = document.getElementById('detected-items-list');
+
+        const galleryModal = document.getElementById('gallery-modal');
+        const closeModal = document.getElementById('close-modal');
+        const gallerySlider = document.getElementById('gallery-slider');
+        const galleryCountEl = document.getElementById('gallery-count');
+        const slideLeftBtn = document.getElementById('slide-left');
+        const slideRightBtn = document.getElementById('slide-right');
+
+        const lightboxModal = document.getElementById('lightbox-modal');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxClose = document.getElementById('lightbox-close');
+
+        const sliderBrightness = document.getElementById('slider-brightness');
+        const sliderContrast = document.getElementById('slider-contrast');
+        const valBrightness = document.getElementById('val-brightness');
+        const valContrast = document.getElementById('val-contrast');
+        const frameColorPicker = document.getElementById('frame-color-picker');
+
+        const chkSlim = document.getElementById('chk-slim');
+        const chkSmooth = document.getElementById('chk-smooth');
+        const chkNose = document.getElementById('chk-nose');
+        const chkLip = document.getElementById('chk-lip');
+
+        let stream = null;
+        let isCameraOn = false;
+        let cocoModel = null;
+        let isAiRunning = false;
+        let lastSavedTime = 0;
+        let currentFilterCSS = "none";
+        let lastFaceBBox = null;
+
+        let currentFrameStyle = 'none';
+        let activeStickers = [];
+
+        let permanentObjectHistory = [];
+        let savedPhotos = JSON.parse(localStorage.getItem('app_saved_gallery')) || [];
+        updateGalleryUI();
+
+        cocoSsd.load().then(model => {
+            cocoModel = model;
+            console.log("Model AI COCO-SSD berhasil dimuat!");
+            if (isCameraOn) {
+                btnToggleAi.disabled = false;
+                btnCapture.disabled = false;
+            }
+        }).catch(err => {
+            console.error("Gagal memuat Model AI:", err);
+        });
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+                await new Promise(resolve => video.onloadedmetadata = resolve);
+                isCameraOn = true;
+                if (cocoModel) {
+                    btnToggleAi.disabled = false;
+                    btnCapture.disabled = false;
+                }
+                renderPhotoboothFrame();
+            } catch (err) {
+                alert("Akses kamera ditolak atau tidak tersedia.");
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+            }
+            isCameraOn = false;
+            btnToggleAi.disabled = true;
+            btnCapture.disabled = true;
+            if (isAiRunning) stopAi();
+        }
+
+        btnStartCam.addEventListener('click', startCamera);
+        btnStopCam.addEventListener('click', stopCamera);
+
+        // KONTROL PHOTOBOOTH FRAME & STIKER
+        window.setFrameStyle = function (style) {
+            currentFrameStyle = style;
+            renderPhotoboothFrame();
+        };
+
+        window.toggleSticker = function (emoji) {
+            const idx = activeStickers.indexOf(emoji);
+            if (idx > -1) activeStickers.splice(idx, 1);
+            else activeStickers.push(emoji);
+            renderPhotoboothFrame();
+        };
+
+        window.renderPhotoboothFrame = function () {
+            if (!isCameraOn || !video.videoWidth) return;
+
+            pbCanvas.width = video.videoWidth;
+            pbCanvas.height = video.videoHeight;
+            const w = pbCanvas.width;
+            const h = pbCanvas.height;
+            const color = frameColorPicker.value;
+
+            pbCtx.clearRect(0, 0, w, h);
+
+            // 1. STYLE BINGKAI CLASSIC BORDER
+            if (currentFrameStyle === 'classic') {
+                pbCtx.strokeStyle = color;
+                pbCtx.lineWidth = 24;
+                pbCtx.strokeRect(12, 12, w - 24, h - 24);
+
+                pbCtx.fillStyle = color;
+                pbCtx.font = "bold 20px Arial";
+                pbCtx.fillText("PHOTOBOOTH", 30, h - 30);
+            }
+            // 2. STYLE CUTOUT HEART (BINGKAI BENTUK HATI)
+            else if (currentFrameStyle === 'heart') {
+                pbCtx.fillStyle = color;
+                pbCtx.fillRect(0, 0, w, h);
+
+                pbCtx.globalCompositeOperation = 'destination-out';
+                pbCtx.beginPath();
+                const topCurveHeight = h * 0.3;
+                pbCtx.moveTo(w / 2, h * 0.85);
+                pbCtx.bezierCurveTo(w / 2, h * 0.8, w * 0.1, h * 0.6, w * 0.1, topCurveHeight);
+                pbCtx.bezierCurveTo(w * 0.1, h * 0.1, w * 0.45, h * 0.1, w / 2, topCurveHeight);
+                pbCtx.bezierCurveTo(w * 0.55, h * 0.1, w * 0.9, h * 0.1, w * 0.9, topCurveHeight);
+                pbCtx.bezierCurveTo(w * 0.9, h * 0.6, w / 2, h * 0.8, w / 2, h * 0.85);
+                pbCtx.closePath();
+                pbCtx.fill();
+                pbCtx.globalCompositeOperation = 'source-over';
+            }
+            // 3. STYLE PHOTOSTRIP 3 STACK
+            else if (currentFrameStyle === 'photostrip') {
+                pbCtx.fillStyle = color;
+                pbCtx.fillRect(0, 0, w, h);
+
+                pbCtx.globalCompositeOperation = 'destination-out';
+                const boxW = w * 0.7;
+                const boxH = h * 0.26;
+                const leftX = (w - boxW) / 2;
+
+                pbCtx.fillRect(leftX, h * 0.08, boxW, boxH);
+                pbCtx.fillRect(leftX, h * 0.38, boxW, boxH);
+                pbCtx.fillRect(leftX, h * 0.68, boxW, boxH);
+
+                pbCtx.globalCompositeOperation = 'source-over';
+            }
+
+            // 4. DRAW STIKER EMOJI OVERLAY
+            if (activeStickers.length > 0) {
+                pbCtx.font = "42px Arial";
+                const stickerPositions = [
+                    { x: 30, y: 60 },
+                    { x: w - 70, y: 60 },
+                    { x: 30, y: h - 40 },
+                    { x: w - 70, y: h - 40 },
+                    { x: w / 2 - 20, y: 50 },
+                    { x: w / 2 - 20, y: h - 30 }
+                ];
+
+                activeStickers.forEach((stk, idx) => {
+                    const pos = stickerPositions[idx % stickerPositions.length];
+                    pbCtx.fillText(stk, pos.x, pos.y);
+                });
+            }
+        };
+
+        window.setPresetFilter = function (preset) {
+            document.querySelectorAll('.btn-filter').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            if (preset === 'normal') {
+                sliderBrightness.value = 100;
+                sliderContrast.value = 100;
+                currentFilterCSS = "none";
+            } else if (preset === 'bw') {
+                currentFilterCSS = "grayscale(100%)";
+            } else if (preset === 'warm') {
+                currentFilterCSS = "sepia(45%) brightness(105%) contrast(105%)";
+            } else if (preset === 'cool') {
+                currentFilterCSS = "hue-rotate(180deg) sepia(15%) brightness(105%)";
+            } else if (preset === 'beauty') {
+                sliderBrightness.value = 115;
+                sliderContrast.value = 95;
+                chkSmooth.checked = true;
+                chkSlim.checked = true;
+                chkNose.checked = true;
+                chkLip.checked = true;
+                currentFilterCSS = "brightness(115%) contrast(95%) saturate(110%)";
+            }
+
+            valBrightness.textContent = sliderBrightness.value + "%";
+            valContrast.textContent = sliderContrast.value + "%";
+            video.style.filter = currentFilterCSS === "none" ? `brightness(${sliderBrightness.value}%) contrast(${sliderContrast.value}%)` : currentFilterCSS;
+            renderBeautyMakeup();
+        };
+
+        window.updateCustomFilter = function () {
+            const b = sliderBrightness.value;
+            const c = sliderContrast.value;
+            valBrightness.textContent = b + "%";
+            valContrast.textContent = c + "%";
+            currentFilterCSS = `brightness(${b}%) contrast(${c}%)`;
+            video.style.filter = currentFilterCSS;
+        };
+
+        window.renderBeautyMakeup = function () {
+            if (!isCameraOn || !video.videoWidth) return;
+
+            beautyCanvas.width = video.videoWidth;
+            beautyCanvas.height = video.videoHeight;
+            bCtx.clearRect(0, 0, beautyCanvas.width, beautyCanvas.height);
+
+            let x = beautyCanvas.width * 0.3;
+            let y = beautyCanvas.height * 0.15;
+            let w = beautyCanvas.width * 0.4;
+            let h = beautyCanvas.height * 0.55;
+
+            if (lastFaceBBox) {
+                x = lastFaceBBox[0];
+                y = lastFaceBBox[1];
+                w = lastFaceBBox[2];
+                h = lastFaceBBox[3];
+            }
+
+            const centerX = x + w / 2;
+            const centerY = y + h / 2;
+
+            if (chkSmooth.checked) {
+                bCtx.save();
+                bCtx.fillStyle = "rgba(255, 240, 230, 0.12)";
+                bCtx.beginPath();
+                bCtx.ellipse(centerX, centerY - h * 0.05, w * 0.38, h * 0.42, 0, 0, Math.PI * 2);
+                bCtx.fill();
+                bCtx.restore();
+            }
+
+            if (chkSlim.checked) {
+                bCtx.save();
+                const leftCheek = bCtx.createRadialGradient(x + w * 0.12, y + h * 0.62, 5, x + w * 0.12, y + h * 0.62, w * 0.25);
+                leftCheek.addColorStop(0, "rgba(100, 50, 30, 0.22)");
+                leftCheek.addColorStop(1, "rgba(0, 0, 0, 0)");
+                bCtx.fillStyle = leftCheek;
+                bCtx.beginPath();
+                bCtx.arc(x + w * 0.12, y + h * 0.62, w * 0.25, 0, Math.PI * 2);
+                bCtx.fill();
+
+                const rightCheek = bCtx.createRadialGradient(x + w * 0.88, y + h * 0.62, 5, x + w * 0.88, y + h * 0.62, w * 0.25);
+                rightCheek.addColorStop(0, "rgba(100, 50, 30, 0.22)");
+                rightCheek.addColorStop(1, "rgba(0, 0, 0, 0)");
+                bCtx.fillStyle = rightCheek;
+                bCtx.beginPath();
+                bCtx.arc(x + w * 0.88, y + h * 0.62, w * 0.25, 0, Math.PI * 2);
+                bCtx.fill();
+                bCtx.restore();
+            }
+
+            if (chkNose.checked) {
+                bCtx.save();
+                const noseGrad = bCtx.createLinearGradient(centerX, y + h * 0.32, centerX, y + h * 0.58);
+                noseGrad.addColorStop(0, "rgba(255, 255, 255, 0.4)");
+                noseGrad.addColorStop(1, "rgba(255, 255, 255, 0.1)");
+
+                bCtx.fillStyle = noseGrad;
+                bCtx.beginPath();
+                bCtx.ellipse(centerX, y + h * 0.45, w * 0.035, h * 0.12, 0, 0, Math.PI * 2);
+                bCtx.fill();
+                bCtx.restore();
+            }
+
+            if (chkLip.checked) {
+                bCtx.save();
+                const lipY = y + h * 0.72;
+                const lipW = w * 0.16;
+                const lipH = h * 0.055;
+
+                const lipGrad = bCtx.createRadialGradient(centerX, lipY, 2, centerX, lipY, lipW);
+                lipGrad.addColorStop(0, "rgba(236, 72, 153, 0.6)");
+                lipGrad.addColorStop(0.7, "rgba(225, 29, 72, 0.4)");
+                lipGrad.addColorStop(1, "rgba(225, 29, 72, 0)");
+
+                bCtx.fillStyle = lipGrad;
+                bCtx.beginPath();
+                bCtx.ellipse(centerX, lipY, lipW, lipH, 0, 0, Math.PI * 2);
+                bCtx.fill();
+                bCtx.restore();
+            }
+        };
+
+        async function detectFrame() {
+            if (!isAiRunning || !isCameraOn) return;
+
+            if (video.videoWidth && video.videoHeight) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            }
+
+            const predictions = await cocoModel.detect(video, 30, 0.40);
+            processPredictions(predictions);
+
+            requestAnimationFrame(detectFrame);
+        }
+
+        function processPredictions(predictions) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            let currentPersonCount = 0;
+            let currentObjectCount = 0;
+            const now = Date.now();
+            const timeStr = new Date().toLocaleTimeString();
+
+            let foundFace = false;
+
+            predictions.forEach(pred => {
+                const isPerson = pred.class === 'person';
+                if (isPerson) {
+                    currentPersonCount++;
+                    lastFaceBBox = pred.bbox;
+                    foundFace = true;
+                } else {
+                    currentObjectCount++;
+                }
+
+                const scorePercent = Math.round(pred.score * 100);
+
+                const isDuplicate = permanentObjectHistory.some(
+                    item => item.name === pred.class && (now - item.timestamp < 3000)
+                );
+
+                if (!isDuplicate) {
+                    permanentObjectHistory.unshift({
+                        name: pred.class,
+                        score: scorePercent,
+                        type: isPerson ? 'person' : 'object',
+                        time: timeStr,
+                        timestamp: now
+                    });
+                }
+
+                const [x, y, width, height] = pred.bbox;
+                const boxColor = isPerson ? '#10b981' : '#2563eb';
+
+                ctx.strokeStyle = boxColor;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(x, y, width, height);
+
+                const labelText = `${pred.class} ${scorePercent}%`;
+                ctx.font = '13px Arial';
+                const textWidth = ctx.measureText(labelText).width;
+
+                ctx.fillStyle = boxColor;
+                ctx.fillRect(x, y > 22 ? y - 22 : y, textWidth + 10, 22);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(labelText, x + 5, y > 22 ? y - 6 : y + 15);
+            });
+
+            if (foundFace) {
+                renderBeautyMakeup();
+            }
+
+            personCountEl.textContent = currentPersonCount;
+            objectCountEl.textContent = currentObjectCount;
+
+            renderDetectedItemsUI(permanentObjectHistory);
+
+            if (db && predictions.length > 0 && (now - lastSavedTime > 3000)) {
+                db.collection("detections").add({
+                    personCount: currentPersonCount,
+                    objectCount: currentObjectCount,
+                    totalCount: predictions.length,
+                    items: permanentObjectHistory.slice(0, 10),
+                    timestamp: new Date().toISOString()
+                }).then(() => {
+                    console.log("Data berhasil dikirim ke Firebase Firestore!");
+                }).catch(err => {
+                    console.error("Gagal menyimpan ke Firestore:", err);
+                });
+
+                lastSavedTime = now;
+            }
+        }
+
+        function renderDetectedItemsUI(items) {
+            if (items.length === 0) {
+                detectedItemsListEl.innerHTML = '<div style="color: #9ca3af; font-size: 13px;">Belum ada benda terdeteksi.</div>';
+                return;
+            }
+
+            detectedItemsListEl.innerHTML = '';
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `item-tag ${item.type === 'person' ? 'person-tag' : 'object-tag'}`;
+                div.innerHTML = `
+          <div class="item-info">
+            <span>${item.name.toUpperCase()}</span>
+            <span class="item-time">${item.time}</span>
+          </div>
+          <span class="badge-score">${item.score}%</span>
+        `;
+                detectedItemsListEl.appendChild(div);
+            });
+        }
+
+        function startAi() {
+            isAiRunning = true;
+            btnToggleAi.textContent = 'Stop AI';
+            btnToggleAi.className = 'btn btn-red';
+            detectFrame();
+        }
+
+        function stopAi() {
+            isAiRunning = false;
+            btnToggleAi.textContent = 'Start AI';
+            btnToggleAi.className = 'btn btn-green';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            personCountEl.textContent = '0';
+            objectCountEl.textContent = '0';
+        }
+
+        btnToggleAi.addEventListener('click', () => {
+            if (isAiRunning) stopAi();
+            else startAi();
+        });
+
+        btnCapture.addEventListener('click', () => {
+            if (!isCameraOn) return;
+
+            const captureCanvas = document.createElement('canvas');
+            captureCanvas.width = video.videoWidth;
+            captureCanvas.height = video.videoHeight;
+            const captureCtx = captureCanvas.getContext('2d');
+
+            captureCtx.filter = getComputedStyle(video).filter;
+            captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+            captureCtx.filter = "none";
+
+            captureCtx.drawImage(beautyCanvas, 0, 0, captureCanvas.width, captureCanvas.height);
+            captureCtx.drawImage(pbCanvas, 0, 0, captureCanvas.width, captureCanvas.height);
+            captureCtx.drawImage(canvas, 0, 0, captureCanvas.width, captureCanvas.height);
+
+            const imageDataUrl = captureCanvas.toDataURL('image/png');
+            const photoObj = {
+                id: Date.now(),
+                data: imageDataUrl,
+                time: new Date().toLocaleTimeString()
+            };
+
+            savedPhotos.unshift(photoObj);
+            localStorage.setItem('app_saved_gallery', JSON.stringify(savedPhotos));
+            updateGalleryUI();
+
+            const link = document.createElement('a');
+            link.download = `photobooth_${photoObj.id}.png`;
+            link.href = imageDataUrl;
+            link.click();
+
+            alert("Foto Photobooth berhasil disimpan ke Galeri!");
+        });
+
+        btnGallery.addEventListener('click', () => {
+            galleryModal.style.display = 'flex';
+        });
+
+        closeModal.addEventListener('click', () => {
+            galleryModal.style.display = 'none';
+        });
+
+        window.addEventListener('click', (e) => {
+            if (e.target === galleryModal) galleryModal.style.display = 'none';
+        });
+
+        function updateGalleryUI() {
+            galleryCountEl.textContent = savedPhotos.length;
+
+            if (savedPhotos.length === 0) {
+                gallerySlider.innerHTML = '<div style="color: #9ca3af; font-size: 13px;">Belum ada foto yang disimpan.</div>';
+                return;
+            }
+
+            gallerySlider.innerHTML = '';
+            savedPhotos.forEach(photo => {
+                const div = document.createElement('div');
+                div.className = 'gallery-card';
+                div.innerHTML = `
+          <img src="${photo.data}" alt="Foto" onclick="openLightbox('${photo.data}')" />
+          <div class="gallery-card-body">
+            <span>${photo.time}</span>
+            <button class="btn btn-clear" onclick="deletePhoto(${photo.id})">Hapus</button>
+          </div>
+        `;
+                gallerySlider.appendChild(div);
+            });
+        }
+
+        slideLeftBtn.addEventListener('click', () => {
+            gallerySlider.scrollBy({ left: -290, behavior: 'smooth' });
+        });
+
+        slideRightBtn.addEventListener('click', () => {
+            gallerySlider.scrollBy({ left: 290, behavior: 'smooth' });
+        });
+
+        let isDown = false;
+        let startX;
+        let scrollLeft;
+
+        gallerySlider.addEventListener('mousedown', (e) => {
+            isDown = true;
+            startX = e.pageX - gallerySlider.offsetLeft;
+            scrollLeft = gallerySlider.scrollLeft;
+        });
+
+        gallerySlider.addEventListener('mouseleave', () => {
+            isDown = false;
+        });
+
+        gallerySlider.addEventListener('mouseup', () => {
+            isDown = false;
+        });
+
+        gallerySlider.addEventListener('mousemove', (e) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - gallerySlider.offsetLeft;
+            const walk = (x - startX) * 2;
+            gallerySlider.scrollLeft = scrollLeft - walk;
+        });
+
+        window.openLightbox = function (src) {
+            lightboxImg.src = src;
+            lightboxModal.style.display = 'flex';
+        };
+
+        lightboxClose.addEventListener('click', () => {
+            lightboxModal.style.display = 'none';
+        });
+
+        lightboxModal.addEventListener('click', (e) => {
+            if (e.target === lightboxModal) lightboxModal.style.display = 'none';
+        });
+
+        window.deletePhoto = function (id) {
+            savedPhotos = savedPhotos.filter(p => p.id !== id);
+            localStorage.setItem('app_saved_gallery', JSON.stringify(savedPhotos));
+            updateGalleryUI();
+        };
+
+        async function clearLogData() {
+            if (!confirm("Apakah Anda yakin ingin menghapus semua data log riwayat?")) {
+                return;
+            }
+
+            permanentObjectHistory = [];
+            detectedItemsListEl.innerHTML = '<div style="color: #9ca3af; font-size: 13px;">Log berhasil dihapus.</div>';
+            personCountEl.textContent = '0';
+            objectCountEl.textContent = '0';
+
+            if (!db) {
+                alert("Firebase belum terhubung.");
+                return;
+            }
+
+            try {
+                const snapshot = await db.collection("detections").get();
+                const batch = db.batch();
+
+                snapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit();
+                alert("Semua data log di Firebase Firestore berhasil dihapus!");
+                console.log("Data log di Firestore telah dibersihkan.");
+            } catch (err) {
+                console.error("Gagal menghapus log dari Firestore:", err);
+                alert("Gagal menghapus log dari Firestore. Periksa koneksi atau rules Firestore Anda.");
+            }
+        }
+
+        btnClearLog.addEventListener('click', clearLogData);
+    </script>
+</body>
+
+</html>
